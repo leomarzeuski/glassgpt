@@ -51,3 +51,19 @@ describe("Value — backward (exemplo canônico do micrograd)", () => {
     expect(a.grad).toBe(6);
   });
 });
+
+describe("Value — operações derivadas", () => {
+  it("neg, sub, div", () => {
+    expect(new Value(3).neg().data).toBe(-3);
+    expect(new Value(5).sub(2).data).toBe(3);
+    expect(new Value(6).div(2).data).toBe(3);
+  });
+
+  it("pow, exp, tanh, relu (forward)", () => {
+    expect(new Value(2).pow(3).data).toBe(8);
+    expect(new Value(0).exp().data).toBeCloseTo(1, 10);
+    expect(new Value(0).tanh().data).toBeCloseTo(0, 10);
+    expect(new Value(-2).relu().data).toBe(0);
+    expect(new Value(2).relu().data).toBe(2);
+  });
+});
