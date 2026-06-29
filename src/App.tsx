@@ -1,4 +1,5 @@
 import { GraphExplorer } from "./web/GraphExplorer";
+import { TrainingDemo } from "./web/TrainingDemo";
 
 export default function App() {
   return (
@@ -18,6 +19,11 @@ export default function App() {
       <section>
         <h2>Explorador do grafo</h2>
         <GraphExplorer />
+      </section>
+      <section>
+        <h2>Treino ao vivo</h2>
+        <p>Uma MLP minúscula aprendendo XOR. Clique e veja a loss cair.</p>
+        <TrainingDemo />
       </section>
     </main>
   );
