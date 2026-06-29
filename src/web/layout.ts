@@ -6,7 +6,7 @@ import type { ValueNodeData } from "./ValueNode";
 const NODE_W = 150;
 const NODE_H = 72;
 
-export function layoutGraph(graph: Graph): { nodes: Node[]; edges: Edge[] } {
+export function layoutGraph(graph: Graph): { nodes: Node<ValueNodeData>[]; edges: Edge[] } {
   const g = new dagre.graphlib.Graph();
   g.setDefaultEdgeLabel(() => ({}));
   g.setGraph({ rankdir: "LR", nodesep: 30, ranksep: 80 });
@@ -16,14 +16,14 @@ export function layoutGraph(graph: Graph): { nodes: Node[]; edges: Edge[] } {
 
   dagre.layout(g);
 
-  const nodes: Node[] = graph.nodes.map((n) => {
+  const nodes: Node<ValueNodeData>[] = graph.nodes.map((n) => {
     const pos = g.node(n.id);
     const data: ValueNodeData = { label: n.label, value: n.data, grad: n.grad, op: n.op };
     return {
       id: n.id,
       type: "valueNode",
       position: { x: pos.x - NODE_W / 2, y: pos.y - NODE_H / 2 },
-      data: data as unknown as Record<string, unknown>,
+      data,
     };
   });
 

@@ -1,6 +1,6 @@
 import { Handle, Position } from "@xyflow/react";
 
-export interface ValueNodeData {
+export interface ValueNodeData extends Record<string, unknown> {
   label: string;
   value: number;
   grad: number;
