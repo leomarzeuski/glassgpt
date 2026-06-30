@@ -8,6 +8,9 @@ navegador. Sem bibliotecas de ML — só a matemática.
 
 Este é o primeiro degrau da escada GlassGPT: `autograd → makemore → GPT`.
 
+> 📌 **Pendências / próximos passos:** veja [docs/NEXT-STEPS.md](docs/NEXT-STEPS.md)
+> (GIF da demo, post do LinkedIn, Degrau 2 — makemore).
+
 ## O que dá pra ver
 
 - **Explorador do grafo:** monte `tanh(a*b + c)`, arraste os valores e clique em
