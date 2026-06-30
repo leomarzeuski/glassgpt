@@ -1,8 +1,13 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ReactFlow, ReactFlowProvider, Background, Controls } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { Value } from "../engine/value";
-import { forwardGraph, backwardGraph } from "../engine/graphController";
+import {
+  forwardGraph,
+  backwardFrames,
+  hasNonFinite,
+} from "../engine/graphController";
+import type { Graph } from "../engine/trace";
 import { layoutGraph } from "./layout";
 import { ValueNode } from "./ValueNode";
 
@@ -17,8 +22,6 @@ function buildExpression(a: number, b: number, c: number): Value {
   out.label = "f";
   return out;
 }
-
-type Phase = "forward" | "backward";
 
 function Slider(props: {
   name: string;
@@ -40,29 +43,106 @@ function Slider(props: {
   );
 }
 
+const FRAME_INTERVAL_MS = 300;
+
 export function GraphExplorer() {
-  const [a, setA] = useState(2);
-  const [b, setB] = useState(-3);
-  const [c, setC] = useState(1);
-  const [phase, setPhase] = useState<Phase>("forward");
+  // Default values chosen so tanh(a*b+c) = tanh(0.5) ≈ 0.46 — clearly non-trivial grads
+  const [a, setA] = useState(1);
+  const [b, setB] = useState(0.5);
+  const [c, setC] = useState(0);
 
-  const graph = useMemo(() => {
-    const root = buildExpression(a, b, c);
-    return phase === "backward" ? backwardGraph(root) : forwardGraph(root);
-  }, [a, b, c, phase]);
+  // Animation state: list of graph snapshots and current index
+  const [framesList, setFramesList] = useState<Graph[]>(() => [
+    forwardGraph(buildExpression(1, 0.5, 0)),
+  ]);
+  const [frameIdx, setFrameIdx] = useState(0);
+  const [isAnimating, setIsAnimating] = useState(false);
 
-  const { nodes, edges } = useMemo(() => layoutGraph(graph), [graph]);
+  // When sliders change, reset to forward graph of new values
+  useEffect(() => {
+    setFramesList([forwardGraph(buildExpression(a, b, c))]);
+    setFrameIdx(0);
+    setIsAnimating(false);
+  }, [a, b, c]);
+
+  // Animation timer: advance one frame every FRAME_INTERVAL_MS
+  useEffect(() => {
+    if (!isAnimating) return;
+    if (frameIdx >= framesList.length - 1) {
+      setIsAnimating(false);
+      return;
+    }
+    const timer = setTimeout(() => {
+      setFrameIdx((i) => i + 1);
+    }, FRAME_INTERVAL_MS);
+    return () => clearTimeout(timer);
+  }, [isAnimating, frameIdx, framesList]);
+
+  const handleForward = useCallback(() => {
+    setIsAnimating(false);
+    setFramesList([forwardGraph(buildExpression(a, b, c))]);
+    setFrameIdx(0);
+  }, [a, b, c]);
+
+  const handleBackward = useCallback(() => {
+    const frames = backwardFrames(buildExpression(a, b, c));
+    setFramesList(frames);
+    setFrameIdx(0);
+    setIsAnimating(true);
+  }, [a, b, c]);
+
+  const displayGraph = framesList[frameIdx] ?? framesList[0];
+
+  const { nodes, edges } = useMemo(() => layoutGraph(displayGraph), [displayGraph]);
+
+  const nonFiniteDetected = hasNonFinite(displayGraph);
 
   return (
     <div>
-      <div style={{ display: "flex", gap: 16, alignItems: "flex-end", marginBottom: 12, flexWrap: "wrap" }}>
-        <button onClick={() => setPhase("forward")}>Forward</button>
-        <button onClick={() => setPhase("backward")}>Backward</button>
+      <div
+        style={{
+          display: "flex",
+          gap: 16,
+          alignItems: "flex-end",
+          marginBottom: 12,
+          flexWrap: "wrap",
+        }}
+      >
+        <button onClick={handleForward}>Forward</button>
+        <button onClick={handleBackward}>Backward</button>
         <Slider name="a" value={a} onChange={setA} />
         <Slider name="b" value={b} onChange={setB} />
         <Slider name="c" value={c} onChange={setC} />
       </div>
-      <div style={{ height: 480, border: "1px solid #1e293b", borderRadius: 8 }}>
+
+      {nonFiniteDetected && (
+        <div
+          role="alert"
+          style={{
+            marginBottom: 8,
+            padding: "6px 12px",
+            background: "#450a0a",
+            border: "1px solid #e11d48",
+            borderRadius: 6,
+            color: "#fca5a5",
+            fontSize: 13,
+          }}
+        >
+          ⚠️ a expressão divergiu (NaN/Inf)
+        </div>
+      )}
+
+      {/* Hidden probe used by tests to verify animation state */}
+      <span
+        data-testid="has-nonzero-grads"
+        aria-hidden="true"
+        hidden
+        data-value={String(displayGraph.nodes.some((n) => n.grad !== 0))}
+      />
+
+      <div
+        style={{ height: 480, border: "1px solid #1e293b", borderRadius: 8 }}
+      >
         <ReactFlowProvider>
           <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} fitView>
             <Background />
