@@ -67,7 +67,7 @@ export function mseLoss(preds: Value[], targets: number[]): Value {
     const diff = preds[i].sub(targets[i]);
     loss = loss.add(diff.mul(diff));
   }
-  return loss;
+  return loss.div(preds.length);
 }
 
 export function sgdStep(params: Value[], lr: number): void {

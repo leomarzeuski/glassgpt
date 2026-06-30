@@ -59,12 +59,12 @@ export class Value {
   }
 
   sub(other: Value | number): Value {
-    const o = other instanceof Value ? other : new Value(other);
+    const o = Value.toValue(other);
     return this.add(o.neg());
   }
 
   div(other: Value | number): Value {
-    const o = other instanceof Value ? other : new Value(other);
+    const o = Value.toValue(other);
     return this.mul(o.pow(-1));
   }
 

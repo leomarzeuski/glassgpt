@@ -15,6 +15,7 @@ describe("ValueNode", () => {
     renderNode({ label: "x", value: 1.2345, grad: 0.5, op: "" });
     expect(screen.getByText(/1\.2345/)).toBeInTheDocument();
     expect(screen.getByText(/0\.5000/)).toBeInTheDocument();
+    expect(screen.getByTestId("value-node")).toHaveAttribute("data-nonfinite", "false");
   });
 
   it("marca nós com valor não-finito", () => {
