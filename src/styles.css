@@ -1,0 +1,107 @@
+:root {
+  /* Palette — "lab instrument on deep ink" */
+  --bg: #0b1220;
+  --bg-2: #0e1726;
+  --panel: #131f33;
+  --hairline: #25364f;
+  --text: #e7eef8;
+  --muted: #8fa1bc;
+  --data: #4fe3c1; /* cyan — the value */
+  --grad: #ffb454; /* amber — the gradient/signal that flows back */
+  --grad-dim: #5b4a2a; /* amber, unlit */
+  --danger: #ff5c7a;
+
+  --font-ui: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  --radius: 10px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-ui);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-feature-settings: "tnum" 1;
+}
+
+/* Buttons */
+button {
+  font-family: var(--font-ui);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  padding: 8px 16px;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    transform 0.05s ease;
+}
+button:hover {
+  border-color: var(--muted);
+}
+button:active {
+  transform: translateY(1px);
+}
+button:focus-visible {
+  outline: 2px solid var(--data);
+  outline-offset: 2px;
+}
+
+/* Primary action — the "run" button lights up amber */
+button.primary {
+  background: var(--grad);
+  color: #1a1205;
+  border-color: var(--grad);
+  font-weight: 600;
+}
+button.primary:hover {
+  filter: brightness(1.08);
+}
+
+/* Toggle pressed state */
+button[aria-pressed="true"] {
+  background: #1c2c47;
+  border-color: var(--data);
+  color: var(--data);
+}
+
+/* Range sliders */
+input[type="range"] {
+  accent-color: var(--data);
+  cursor: pointer;
+}
+
+a {
+  color: var(--data);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}

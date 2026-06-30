@@ -2,67 +2,67 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, fireEvent, act } from "@testing-library/react";
 import { GraphExplorer } from "./GraphExplorer";
 
+// Reads "gradientes calculados: X/Y" -> [revealed, total]
+function gradCount(): [number, number] {
+  const text = screen.getByTestId("grad-status").textContent ?? "";
+  const m = text.match(/(\d+)\/(\d+)/);
+  if (!m) throw new Error(`status text sem contador: "${text}"`);
+  return [Number(m[1]), Number(m[2])];
+}
+
+// The animation reschedules a timer inside an effect after each frame, so we
+// advance one interval at a time, flushing React between ticks.
+async function playAnimation(ticks = 12) {
+  for (let i = 0; i < ticks; i++) {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(400);
+    });
+  }
+}
+
 describe("GraphExplorer", () => {
   afterEach(() => {
     vi.useRealTimers();
   });
 
-  it("renderiza os controles Forward/Backward e os sliders", () => {
+  it("renderiza os controles e os sliders", () => {
     render(<GraphExplorer />);
-    expect(screen.getByRole("button", { name: /forward/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /backward/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /animar backward/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /resetar/i })).toBeInTheDocument();
     expect(screen.getAllByRole("slider").length).toBeGreaterThanOrEqual(3);
   });
 
-  it("clicar em Backward não quebra a renderização", () => {
+  it("começa com 0 gradientes calculados (estado forward)", () => {
     render(<GraphExplorer />);
-    fireEvent.click(screen.getByRole("button", { name: /backward/i }));
-    expect(screen.getByRole("button", { name: /backward/i })).toBeInTheDocument();
+    const [revealed, total] = gradCount();
+    expect(revealed).toBe(0);
+    expect(total).toBeGreaterThan(0);
   });
 
-  it("após Backward e animação completa, exibe gradientes não-zero", async () => {
+  it("após Animar backward e a animação completar, todos os gradientes são calculados", async () => {
     vi.useFakeTimers();
     render(<GraphExplorer />);
 
-    // Before backward: all grads should be 0
-    expect(
-      screen.getByTestId("has-nonzero-grads").getAttribute("data-value"),
-    ).toBe("false");
+    fireEvent.click(screen.getByRole("button", { name: /animar backward/i }));
+    await playAnimation();
 
-    fireEvent.click(screen.getByRole("button", { name: /backward/i }));
-
-    // Advance timers well past the full animation (7 frames × 300 ms = 2100 ms)
-    await act(async () => {
-      vi.advanceTimersByTime(5000);
-    });
-
-    // After animation completes, at least the root node has grad = 1
-    expect(
-      screen.getByTestId("has-nonzero-grads").getAttribute("data-value"),
-    ).toBe("true");
+    const [revealed, total] = gradCount();
+    expect(revealed).toBe(total);
+    expect(revealed).toBeGreaterThan(0);
   });
 
-  it("Forward após Backward reseta para grads zero", async () => {
+  it("Resetar após o backward volta para 0 gradientes", async () => {
     vi.useFakeTimers();
     render(<GraphExplorer />);
 
-    fireEvent.click(screen.getByRole("button", { name: /backward/i }));
+    fireEvent.click(screen.getByRole("button", { name: /animar backward/i }));
+    await playAnimation();
+    expect(gradCount()[0]).toBeGreaterThan(0);
+
     await act(async () => {
-      vi.advanceTimersByTime(5000);
+      fireEvent.click(screen.getByRole("button", { name: /resetar/i }));
     });
 
-    // Should now show non-zero grads
-    expect(
-      screen.getByTestId("has-nonzero-grads").getAttribute("data-value"),
-    ).toBe("true");
-
-    // Click Forward — should reset to all-zero grads
-    await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: /forward/i }));
-    });
-
-    expect(
-      screen.getByTestId("has-nonzero-grads").getAttribute("data-value"),
-    ).toBe("false");
+    expect(gradCount()[0]).toBe(0);
   });
 });

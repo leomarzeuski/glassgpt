@@ -1,17 +1,24 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { ReactFlow, ReactFlowProvider, Background, Controls } from "@xyflow/react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  ReactFlow,
+  ReactFlowProvider,
+  Background,
+  Controls,
+  useNodesState,
+  useEdgesState,
+  type Node,
+  type Edge,
+} from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { Value } from "../engine/value";
-import {
-  forwardGraph,
-  backwardFrames,
-  hasNonFinite,
-} from "../engine/graphController";
+import { forwardGraph, backwardFrames, hasNonFinite } from "../engine/graphController";
 import type { Graph } from "../engine/trace";
 import { layoutGraph } from "./layout";
-import { ValueNode } from "./ValueNode";
+import { ValueNode, type ValueNodeData } from "./ValueNode";
 
 const nodeTypes = { valueNode: ValueNode };
+const FRAME_INTERVAL_MS = 320;
+const INIT = { a: 1, b: 0.5, c: 0 };
 
 // Expressão de exemplo: f = tanh(a*b + c)
 function buildExpression(a: number, b: number, c: number): Value {
@@ -23,130 +30,206 @@ function buildExpression(a: number, b: number, c: number): Value {
   return out;
 }
 
-function Slider(props: {
-  name: string;
-  value: number;
-  onChange: (v: number) => void;
-}) {
+/** id -> {value, grad} for merging a frame's numbers onto stable positioned nodes. */
+function numbersById(g: Graph): Map<string, { value: number; grad: number }> {
+  return new Map(g.nodes.map((n) => [n.id, { value: n.data, grad: n.grad }]));
+}
+
+function Slider(props: { name: string; value: number; onChange: (v: number) => void }) {
   return (
-    <label style={{ display: "flex", flexDirection: "column", fontSize: 12 }}>
-      {props.name} = {props.value.toFixed(2)}
+    <label style={{ display: "flex", flexDirection: "column", gap: 2, fontSize: 12, color: "var(--muted)" }}>
+      <span>
+        {props.name} ={" "}
+        <span className="mono" style={{ color: "var(--text)" }}>
+          {props.value.toFixed(2)}
+        </span>
+      </span>
       <input
         type="range"
-        min={-5}
-        max={5}
+        min={-3}
+        max={3}
         step={0.1}
         value={props.value}
+        aria-label={`valor de ${props.name}`}
         onChange={(e) => props.onChange(Number(e.target.value))}
       />
     </label>
   );
 }
 
-const FRAME_INTERVAL_MS = 300;
+function LegendChip(props: { color: string; label: string; desc: string }) {
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--muted)" }}>
+      <span style={{ width: 9, height: 9, borderRadius: 999, background: props.color, flexShrink: 0 }} />
+      <span style={{ color: "var(--text)", fontWeight: 500 }}>{props.label}</span> {props.desc}
+    </span>
+  );
+}
 
 export function GraphExplorer() {
-  // Default values chosen so tanh(a*b+c) = tanh(0.5) ≈ 0.46 — clearly non-trivial grads
-  const [a, setA] = useState(1);
-  const [b, setB] = useState(0.5);
-  const [c, setC] = useState(0);
+  const [a, setA] = useState(INIT.a);
+  const [b, setB] = useState(INIT.b);
+  const [c, setC] = useState(INIT.c);
 
-  // Animation state: list of graph snapshots and current index
-  const [framesList, setFramesList] = useState<Graph[]>(() => [
-    forwardGraph(buildExpression(1, 0.5, 0)),
-  ]);
+  const [phase, setPhase] = useState<"forward" | "backward">("forward");
+  const framesRef = useRef<Graph[]>([]);
   const [frameIdx, setFrameIdx] = useState(0);
   const [isAnimating, setIsAnimating] = useState(false);
 
-  // When sliders change, reset to forward graph of new values
+  // The graph currently shown (forward state, or the current backward frame).
+  const [displayGraph, setDisplayGraph] = useState<Graph>(() =>
+    forwardGraph(buildExpression(INIT.a, INIT.b, INIT.c)),
+  );
+
+  // Positions are computed once (structure is constant); only node DATA changes.
+  // We update data in place via setRfNodes so React Flow never unmounts nodes,
+  // and wire onNodesChange so it keeps node measurements.
+  const initialLayout = useMemo(
+    () => layoutGraph(forwardGraph(buildExpression(INIT.a, INIT.b, INIT.c))),
+    [],
+  );
+  const [rfNodes, setRfNodes, onNodesChange] = useNodesState<Node<ValueNodeData>>(initialLayout.nodes);
+  const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState<Edge>(initialLayout.edges);
+
+  // Sync the displayed graph onto the React Flow nodes/edges (data only).
   useEffect(() => {
-    setFramesList([forwardGraph(buildExpression(a, b, c))]);
-    setFrameIdx(0);
+    const m = numbersById(displayGraph);
+    setRfNodes((prev) =>
+      prev.map((n) => {
+        const v = m.get(n.id);
+        return v ? { ...n, data: { ...n.data, value: v.value, grad: v.grad } } : n;
+      }),
+    );
+    const backward = phase === "backward";
+    setRfEdges((prev) =>
+      prev.map((e) => ({
+        ...e,
+        animated: backward,
+        style: {
+          stroke: backward ? "var(--grad)" : "var(--hairline)",
+          strokeWidth: backward ? 2 : 1,
+        },
+      })),
+    );
+  }, [displayGraph, phase, setRfNodes, setRfEdges]);
+
+  // Reset to the forward graph whenever a slider changes. Depends ONLY on the
+  // slider values so it never re-fires mid-animation.
+  useEffect(() => {
+    framesRef.current = [];
     setIsAnimating(false);
+    setFrameIdx(0);
+    setPhase("forward");
+    setDisplayGraph(forwardGraph(buildExpression(a, b, c)));
   }, [a, b, c]);
 
-  // Animation timer: advance one frame every FRAME_INTERVAL_MS
+  // Animation timer: advance one frame per tick while animating.
   useEffect(() => {
     if (!isAnimating) return;
-    if (frameIdx >= framesList.length - 1) {
+    if (frameIdx >= framesRef.current.length - 1) {
       setIsAnimating(false);
       return;
     }
-    const timer = setTimeout(() => {
-      setFrameIdx((i) => i + 1);
-    }, FRAME_INTERVAL_MS);
-    return () => clearTimeout(timer);
-  }, [isAnimating, frameIdx, framesList]);
+    const t = setTimeout(() => setFrameIdx((i) => i + 1), FRAME_INTERVAL_MS);
+    return () => clearTimeout(t);
+  }, [isAnimating, frameIdx]);
 
-  const handleForward = useCallback(() => {
+  // Paint the current backward frame as frameIdx advances.
+  useEffect(() => {
+    if (phase !== "backward") return;
+    const frame = framesRef.current[frameIdx];
+    if (frame) setDisplayGraph(frame);
+  }, [phase, frameIdx]);
+
+  const handleReset = useCallback(() => {
+    framesRef.current = [];
     setIsAnimating(false);
-    setFramesList([forwardGraph(buildExpression(a, b, c))]);
     setFrameIdx(0);
+    setPhase("forward");
+    setDisplayGraph(forwardGraph(buildExpression(a, b, c)));
   }, [a, b, c]);
 
   const handleBackward = useCallback(() => {
     const frames = backwardFrames(buildExpression(a, b, c));
-    setFramesList(frames);
+    framesRef.current = frames;
+    setPhase("backward");
     setFrameIdx(0);
+    setDisplayGraph(frames[0]);
     setIsAnimating(true);
   }, [a, b, c]);
 
-  const displayGraph = framesList[frameIdx] ?? framesList[0];
-
-  const { nodes, edges } = useMemo(() => layoutGraph(displayGraph), [displayGraph]);
-
-  const nonFiniteDetected = hasNonFinite(displayGraph);
+  const totalSteps =
+    framesRef.current.length > 0 ? framesRef.current.length - 1 : displayGraph.nodes.length;
+  const revealed = phase === "backward" ? Math.min(frameIdx, totalSteps) : 0;
+  const result = Math.tanh(a * b + c);
+  const diverged = hasNonFinite(displayGraph);
 
   return (
     <div>
-      <div
-        style={{
-          display: "flex",
-          gap: 16,
-          alignItems: "flex-end",
-          marginBottom: 12,
-          flexWrap: "wrap",
-        }}
-      >
-        <button onClick={handleForward}>Forward</button>
-        <button onClick={handleBackward}>Backward</button>
+      {/* Expression + how-to */}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 16, alignItems: "baseline", marginBottom: 10 }}>
+        <span className="mono" style={{ fontSize: 16, color: "var(--text)" }}>
+          f = tanh(<span style={{ color: "var(--data)" }}>a</span>·<span style={{ color: "var(--data)" }}>b</span> +{" "}
+          <span style={{ color: "var(--data)" }}>c</span>) ={" "}
+          <span style={{ color: "var(--data)" }}>{result.toFixed(4)}</span>
+        </span>
+      </div>
+
+      {/* Controls */}
+      <div style={{ display: "flex", gap: 16, alignItems: "flex-end", marginBottom: 10, flexWrap: "wrap" }}>
+        <button className="primary" onClick={handleBackward}>
+          ▶ Animar backward
+        </button>
+        <button onClick={handleReset}>Resetar</button>
+        <span data-testid="grad-status" className="mono" style={{ fontSize: 12, color: "var(--muted)" }}>
+          gradientes calculados:{" "}
+          <span style={{ color: revealed > 0 ? "var(--grad)" : "var(--muted)" }}>{revealed}</span>/{totalSteps}
+        </span>
+        <div style={{ flex: 1 }} />
         <Slider name="a" value={a} onChange={setA} />
         <Slider name="b" value={b} onChange={setB} />
         <Slider name="c" value={c} onChange={setC} />
       </div>
 
-      {nonFiniteDetected && (
+      {/* Legend */}
+      <div style={{ display: "flex", gap: 18, flexWrap: "wrap", marginBottom: 10 }}>
+        <LegendChip color="var(--data)" label="valor" desc="— o número calculado em cada passo" />
+        <LegendChip color="var(--grad)" label="grad" desc="— o quanto aquele número influencia o resultado f" />
+      </div>
+
+      {diverged && (
         <div
           role="alert"
           style={{
             marginBottom: 8,
             padding: "6px 12px",
-            background: "#450a0a",
-            border: "1px solid #e11d48",
-            borderRadius: 6,
-            color: "#fca5a5",
+            background: "rgba(255,92,122,0.12)",
+            border: "1px solid var(--danger)",
+            borderRadius: 8,
+            color: "var(--danger)",
             fontSize: 13,
           }}
         >
-          ⚠️ a expressão divergiu (NaN/Inf)
+          ⚠️ a expressão divergiu (NaN/∞) — puxe os valores de volta pra perto de zero.
         </div>
       )}
 
-      {/* Hidden probe used by tests to verify animation state */}
-      <span
-        data-testid="has-nonzero-grads"
-        aria-hidden="true"
-        hidden
-        data-value={String(displayGraph.nodes.some((n) => n.grad !== 0))}
-      />
-
-      <div
-        style={{ height: 480, border: "1px solid #1e293b", borderRadius: 8 }}
-      >
+      <div style={{ height: 460, border: "1px solid var(--hairline)", borderRadius: 12, background: "var(--bg-2)" }}>
         <ReactFlowProvider>
-          <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} fitView>
-            <Background />
-            <Controls />
+          <ReactFlow
+            nodes={rfNodes}
+            edges={rfEdges}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            nodeTypes={nodeTypes}
+            fitView
+            fitViewOptions={{ padding: 0.2 }}
+            proOptions={{ hideAttribution: true }}
+            nodesDraggable={false}
+            nodesConnectable={false}
+          >
+            <Background color="var(--hairline)" gap={20} />
+            <Controls showInteractive={false} />
           </ReactFlow>
         </ReactFlowProvider>
       </div>
