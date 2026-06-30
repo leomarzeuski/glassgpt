@@ -4,6 +4,8 @@ Um motor de **autograd** (diferenciação automática) escrito **do zero em
 TypeScript**, com um visualizador interativo do grafo de computação rodando no
 navegador. Sem bibliotecas de ML — só a matemática.
 
+**Demo ao vivo:** https://glassgpt.vercel.app
+
 Este é o primeiro degrau da escada GlassGPT: `autograd → makemore → GPT`.
 
 ## O que dá pra ver
