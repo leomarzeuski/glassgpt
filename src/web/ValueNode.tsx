@@ -5,6 +5,7 @@ export interface ValueNodeData extends Record<string, unknown> {
   value: number;
   grad: number;
   op: string;
+  active?: boolean;
 }
 
 const OP_WORDS: Record<string, string> = {
@@ -32,11 +33,12 @@ function fmt(x: number): string {
 export function ValueNode({ data }: { data: ValueNodeData }) {
   const nonFinite = !Number.isFinite(data.value) || !Number.isFinite(data.grad);
   const gradLit = data.grad !== 0 && Number.isFinite(data.grad);
+  const active = data.active === true;
   const { eyebrow, isResult } = caption(data.label, data.op);
 
   const borderColor = nonFinite
     ? "var(--danger)"
-    : isResult
+    : active || isResult
       ? "var(--data)"
       : "var(--hairline)";
 
@@ -49,11 +51,14 @@ export function ValueNode({ data }: { data: ValueNodeData }) {
         borderRadius: 10,
         padding: "8px 12px",
         background: "var(--panel)",
-        border: `1px solid ${borderColor}`,
-        boxShadow: gradLit
-          ? "0 0 0 1px var(--grad), 0 0 18px -5px var(--grad)"
-          : "none",
-        transition: "box-shadow .25s ease, border-color .25s ease",
+        border: `1px solid ${active ? "var(--grad)" : borderColor}`,
+        boxShadow: active
+          ? "0 0 0 2px var(--grad), 0 0 26px -2px var(--grad)"
+          : gradLit
+            ? "0 0 0 1px var(--grad), 0 0 18px -5px var(--grad)"
+            : "none",
+        transform: active ? "scale(1.06)" : "scale(1)",
+        transition: "box-shadow .2s ease, border-color .2s ease, transform .2s ease",
         fontFamily: "var(--font-ui)",
       }}
     >

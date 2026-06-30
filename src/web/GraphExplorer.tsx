@@ -17,7 +17,7 @@ import { layoutGraph } from "./layout";
 import { ValueNode, type ValueNodeData } from "./ValueNode";
 
 const nodeTypes = { valueNode: ValueNode };
-const FRAME_INTERVAL_MS = 320;
+const FRAME_INTERVAL_MS = 600;
 const INIT = { a: 1, b: 0.5, c: 0 };
 
 // Expressão de exemplo: f = tanh(a*b + c)
@@ -75,6 +75,8 @@ export function GraphExplorer() {
   const framesRef = useRef<Graph[]>([]);
   const [frameIdx, setFrameIdx] = useState(0);
   const [isAnimating, setIsAnimating] = useState(false);
+  // id of the node whose gradient was just revealed (for the active highlight)
+  const [activeId, setActiveId] = useState<string | null>(null);
 
   // The graph currently shown (forward state, or the current backward frame).
   const [displayGraph, setDisplayGraph] = useState<Graph>(() =>
@@ -97,7 +99,9 @@ export function GraphExplorer() {
     setRfNodes((prev) =>
       prev.map((n) => {
         const v = m.get(n.id);
-        return v ? { ...n, data: { ...n.data, value: v.value, grad: v.grad } } : n;
+        return v
+          ? { ...n, data: { ...n.data, value: v.value, grad: v.grad, active: n.id === activeId } }
+          : n;
       }),
     );
     const backward = phase === "backward";
@@ -111,7 +115,7 @@ export function GraphExplorer() {
         },
       })),
     );
-  }, [displayGraph, phase, setRfNodes, setRfEdges]);
+  }, [displayGraph, phase, activeId, setRfNodes, setRfEdges]);
 
   // Reset to the forward graph whenever a slider changes. Depends ONLY on the
   // slider values so it never re-fires mid-animation.
@@ -119,6 +123,7 @@ export function GraphExplorer() {
     framesRef.current = [];
     setIsAnimating(false);
     setFrameIdx(0);
+    setActiveId(null);
     setPhase("forward");
     setDisplayGraph(forwardGraph(buildExpression(a, b, c)));
   }, [a, b, c]);
@@ -134,17 +139,30 @@ export function GraphExplorer() {
     return () => clearTimeout(t);
   }, [isAnimating, frameIdx]);
 
-  // Paint the current backward frame as frameIdx advances.
+  // Paint the current backward frame as frameIdx advances, and highlight the
+  // node whose gradient was just revealed.
   useEffect(() => {
     if (phase !== "backward") return;
-    const frame = framesRef.current[frameIdx];
-    if (frame) setDisplayGraph(frame);
+    const frames = framesRef.current;
+    const frame = frames[frameIdx];
+    if (!frame) return;
+    setDisplayGraph(frame);
+
+    const prev = frames[frameIdx - 1];
+    if (!prev || frameIdx >= frames.length - 1) {
+      setActiveId(null);
+      return;
+    }
+    const prevGrad = new Map(prev.nodes.map((n) => [n.id, n.grad]));
+    const just = frame.nodes.find((n) => n.grad !== 0 && (prevGrad.get(n.id) ?? 0) === 0);
+    setActiveId(just ? just.id : null);
   }, [phase, frameIdx]);
 
   const handleReset = useCallback(() => {
     framesRef.current = [];
     setIsAnimating(false);
     setFrameIdx(0);
+    setActiveId(null);
     setPhase("forward");
     setDisplayGraph(forwardGraph(buildExpression(a, b, c)));
   }, [a, b, c]);
@@ -152,6 +170,7 @@ export function GraphExplorer() {
   const handleBackward = useCallback(() => {
     const frames = backwardFrames(buildExpression(a, b, c));
     framesRef.current = frames;
+    setActiveId(null);
     setPhase("backward");
     setFrameIdx(0);
     setDisplayGraph(frames[0]);

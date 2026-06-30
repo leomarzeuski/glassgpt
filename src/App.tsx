@@ -44,7 +44,9 @@ export default function App() {
     <main style={{ maxWidth: 1040, margin: "0 auto", padding: "48px 24px 80px" }}>
       <header style={{ marginBottom: 44 }}>
         <Eyebrow>GlassGPT · Degrau 1 de 3</Eyebrow>
-        <h1 style={{ fontSize: 44, lineHeight: 1.05, maxWidth: 620 }}>Veja uma rede neural pensar.</h1>
+        <h1 style={{ fontSize: "clamp(30px, 7vw, 44px)", lineHeight: 1.05, maxWidth: 620 }}>
+          Veja uma rede neural pensar.
+        </h1>
         <p style={{ fontSize: 17, lineHeight: 1.6, color: "var(--text)", maxWidth: 640, marginTop: 16 }}>
           Toda IA aprende ajustando números a partir de um sinal chamado <strong style={{ color: "var(--grad)" }}>gradiente</strong> —
           o quanto cada número "tem culpa" pelo resultado. Normalmente isso é invisível. Aqui, acontece na sua frente,
